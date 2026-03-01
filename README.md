@@ -4,7 +4,10 @@ S4 is a high-performance, S3-compatible object storage server written in Rust. I
 
 ![Demo](assets/screenshot.png)
 
-> **Demo**: [s4console](http://63.141.251.44:24490) · **Login**: `root` / `password12345` · Resets every 10 min
+> **Demo Console**: [s4console](http://63.141.251.44:24490) · **Login**: `root` / `password12345` · Resets every 10 min
+
+> **Demo API**: [s4core](http://63.141.251.44:10117) · **Access Key ID / Secret Access Key**: `my-secret-key_id` / `my-secret-access-key` · Resets every 10 min
+
 
 ## Features
 

@@ -37,6 +37,7 @@ use tracing::{debug, error, info};
 use crate::handlers::get_bucket_versioning_status;
 use crate::s3::{errors::S3Error, xml};
 use crate::server::AppState;
+use s4_features::object_lock::{object_lock_to_xml, ObjectLockConfiguration};
 
 /// Query parameters for ListObjects (v1).
 #[derive(Debug, Deserialize, Default)]
@@ -140,6 +141,7 @@ pub struct DeleteObjectsResult {
 pub async fn create_bucket(
     State(state): State<AppState>,
     Path(bucket): Path<String>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     info!("CreateBucket: {}", bucket);
 
@@ -147,6 +149,13 @@ pub async fn create_bucket(
     if let Err(e) = validate_bucket_name(&bucket) {
         return e.into_response();
     }
+
+    // Check if Object Lock is requested via header
+    let object_lock_enabled = headers
+        .get("x-amz-bucket-object-lock-enabled")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
 
     // Create bucket marker (this tracks bucket existence)
     let storage = state.storage.read().await;
@@ -171,7 +180,58 @@ pub async fn create_bucket(
         .await
     {
         error!("Failed to create bucket marker: {:?}", e);
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create bucket").into_response();
+        return S3Error::InternalError("Failed to create bucket".to_string()).into_response();
+    }
+
+    // If Object Lock requested, enable versioning and Object Lock atomically
+    if object_lock_enabled {
+        info!(
+            "Enabling Object Lock (with versioning) on bucket: {}",
+            bucket
+        );
+
+        // Enable versioning (required for Object Lock)
+        let versioning_key = format!("__s4_bucket_versioning_{}", bucket);
+        if let Err(e) = storage
+            .put_object(
+                "__system__",
+                &versioning_key,
+                b"Enabled",
+                "text/plain",
+                &std::collections::HashMap::new(),
+            )
+            .await
+        {
+            error!("Failed to enable versioning for Object Lock: {:?}", e);
+            return S3Error::InternalError(
+                "Failed to enable versioning for Object Lock".to_string(),
+            )
+            .into_response();
+        }
+
+        // Enable Object Lock
+        let lock_config = ObjectLockConfiguration {
+            object_lock_enabled: true,
+            default_retention: None,
+        };
+        let lock_key = format!("__s4_bucket_object_lock_{}", bucket);
+        let lock_xml = object_lock_to_xml(&lock_config);
+        if let Err(e) = storage
+            .put_object(
+                "__system__",
+                &lock_key,
+                lock_xml.as_bytes(),
+                "application/xml",
+                &std::collections::HashMap::new(),
+            )
+            .await
+        {
+            error!("Failed to enable Object Lock: {:?}", e);
+            return S3Error::InternalError("Failed to enable Object Lock".to_string())
+                .into_response();
+        }
+
+        info!("Object Lock enabled on bucket: {}", bucket);
     }
 
     info!("Bucket created: {}", bucket);
@@ -214,18 +274,14 @@ pub async fn delete_bucket(
     if let Ok(list) = objects {
         let filtered_objects = strip_version_ids_from_keys(list);
         if !filtered_objects.is_empty() {
-            return (
-                StatusCode::CONFLICT,
-                "BucketNotEmpty: The bucket you tried to delete is not empty",
-            )
-                .into_response();
+            return S3Error::BucketNotEmpty.into_response();
         }
     }
 
     // Delete bucket marker
     if let Err(e) = storage.delete_object("__system__", &bucket_marker_key).await {
         error!("Failed to delete bucket marker: {:?}", e);
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete bucket").into_response();
+        return S3Error::InternalError("Failed to delete bucket".to_string()).into_response();
     }
 
     info!("Bucket deleted: {}", bucket);
@@ -322,7 +378,7 @@ pub async fn list_objects(
         Ok(list) => list,
         Err(e) => {
             error!("Failed to list objects: {:?}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to list objects").into_response();
+            return S3Error::InternalError("Failed to list objects".to_string()).into_response();
         }
     };
 

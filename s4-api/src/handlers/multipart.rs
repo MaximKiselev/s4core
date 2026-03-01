@@ -426,7 +426,7 @@ pub async fn complete_multipart_upload(
             Ok(etag) => etag,
             Err(e) => {
                 error!("Failed to store combined object: {:?}", e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to store object")
+                return S3Error::InternalError("Failed to store object".to_string())
                     .into_response();
             }
         };

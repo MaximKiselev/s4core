@@ -9,6 +9,8 @@
 *.swp
 *.swo
 *~
+.claude/
+
 
 # OS
 .DS_Store
@@ -43,10 +45,7 @@ lcov.info
 tarpaulin-report.html
 
 # Frontend (Next.js)
-frontend/s4-console/.next/
-frontend/s4-console/out/
-frontend/s4-console/node_modules/
-frontend/s4-console/.env*.local
+frontend/
 
 # WARP test files
 scripts/warp-mixed*

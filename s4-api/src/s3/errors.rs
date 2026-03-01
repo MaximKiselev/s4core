@@ -101,6 +101,10 @@ pub enum S3Error {
     /// Internal error.
     #[error("InternalError: {0}")]
     InternalError(String),
+
+    /// The requested functionality is not implemented.
+    #[error("NotImplemented: {0}")]
+    NotImplemented(String),
 }
 
 impl S3Error {
@@ -125,6 +129,7 @@ impl S3Error {
             S3Error::NoSuchObjectLockConfiguration => "NoSuchObjectLockConfiguration",
             S3Error::InvalidRetention(_) => "InvalidRetention",
             S3Error::InternalError(_) => "InternalError",
+            S3Error::NotImplemented(_) => "NotImplemented",
         }
     }
 
@@ -149,6 +154,7 @@ impl S3Error {
             S3Error::NoSuchObjectLockConfiguration => StatusCode::NOT_FOUND,
             S3Error::InvalidRetention(_) => StatusCode::BAD_REQUEST,
             S3Error::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            S3Error::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
         }
     }
 }

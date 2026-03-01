@@ -20,7 +20,7 @@
 use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, Extension, Path, Query, State},
-    http::{header::HeaderName, HeaderMap, Method, StatusCode},
+    http::{header::HeaderName, HeaderMap, Method},
     middleware,
     response::{IntoResponse, Response},
     routing::{delete, get, head, post, put},
@@ -359,6 +359,11 @@ struct ObjectQueryParams {
     legal_hold: Option<String>,
     /// Tagging configuration marker for Object tagging.
     tagging: Option<String>,
+    /// S3 Select marker (SelectObjectContent).
+    select: Option<String>,
+    /// S3 Select type parameter.
+    #[serde(rename = "select-type")]
+    select_type: Option<String>,
 }
 
 /// Query parameters for bucket configuration operations.
@@ -424,6 +429,7 @@ async fn put_bucket_router(
     state: State<AppState>,
     path: Path<String>,
     user: Option<Extension<User>>,
+    headers: HeaderMap,
     Query(params): Query<BucketConfigQueryParams>,
     body: Bytes,
 ) -> axum::response::Response {
@@ -443,8 +449,8 @@ async fn put_bucket_router(
             .await
             .into_response()
     } else {
-        // Default: CreateBucket
-        handlers::create_bucket(state, path).await.into_response()
+        // Default: CreateBucket (pass headers for x-amz-bucket-object-lock-enabled)
+        handlers::create_bucket(state, path, headers).await.into_response()
     }
 }
 
@@ -487,7 +493,8 @@ async fn post_bucket_router(
     if params.delete.is_some() {
         handlers::delete_objects(state, path, headers, body).await.into_response()
     } else {
-        (StatusCode::BAD_REQUEST, "Invalid POST request").into_response()
+        S3Error::NotImplemented("The requested operation is not implemented".to_string())
+            .into_response()
     }
 }
 
@@ -594,9 +601,16 @@ async fn post_object_router(
         handlers::complete_multipart_upload(state, path, Query(query), headers, body)
             .await
             .into_response()
+    } else if params.select.is_some() || params.select_type.is_some() {
+        // S3 Select (SelectObjectContent) is not implemented
+        S3Error::NotImplemented(
+            "S3 Select (SelectObjectContent) is not supported by this server".to_string(),
+        )
+        .into_response()
     } else {
         // Unknown POST operation
-        (axum::http::StatusCode::BAD_REQUEST, "Invalid POST request").into_response()
+        S3Error::NotImplemented("The requested operation is not implemented".to_string())
+            .into_response()
     }
 }
 
