@@ -268,13 +268,11 @@ pub async fn delete_bucket(
         return S3Error::NoSuchBucket.into_response();
     }
 
-    // Check if bucket is empty
-    // Note: We use strip_version_ids_from_keys to filter out delete markers
-    // A bucket is considered empty if all objects have delete markers as latest version
+    // Check if bucket is empty (must have no objects, versions, or delete markers)
+    // Per S3 spec: all object versions AND delete markers must be removed before deletion
     let objects = storage.list_objects(&bucket, "", 1).await;
     if let Ok(list) = objects {
-        let filtered_objects = strip_version_ids_from_keys(list);
-        if !filtered_objects.is_empty() {
+        if !list.is_empty() {
             return S3Error::BucketNotEmpty.into_response();
         }
     }
